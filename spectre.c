@@ -118,7 +118,7 @@ void victim_function(size_t x) {
 Analysis code
 ********************************************************************/
 #ifdef NOCLFLUSH
-#define CACHE_FLUSH_ITERATIONS 2048
+#define CACHE_FLUSH_ITERATIONS 131072
 #define CACHE_FLUSH_STRIDE 4096
 uint8_t cache_flush_array[CACHE_FLUSH_STRIDE * CACHE_FLUSH_ITERATIONS];
 
@@ -299,7 +299,7 @@ int main(int argc,
 
   #ifdef NOCLFLUSH
   for (i = 0; i < (int)sizeof(cache_flush_array); i++) {
-    cache_flush_array[i] = 1;
+    cache_flush_array[i] = 45;
   }
   #endif
   
