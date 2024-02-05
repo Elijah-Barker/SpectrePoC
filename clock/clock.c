@@ -5,19 +5,9 @@
 #include <unistd.h>
 #include <stdbool.h>
 
-// #ifdef _MSC_VER
-// #include <intrin.h> /* for rdtsc, rdtscp, clflush */
-// #pragma optimize("gt", on)
-// #else
-// #include <x86intrin.h> /* for rdtsc, rdtscp, clflush */
-// #endif                 /* ifdef _MSC_VER */
-
 #ifndef __EMSCRIPTEN_PTHREADS__
 assert("No pthreads!");
 #endif
-
-
-#define NTHREADS 150
 
 pthread_t loopc;
 pthread_t get_c;
@@ -54,8 +44,9 @@ void *loop_counter()
 
 void *try_time()
 {
-    int z, i, y;
+    int i, y;
     int x = 0;
+    int z;
     for (z = 0; z < 100000; z++)
         ;
 
@@ -79,7 +70,6 @@ void *try_time()
 
 int main(void)
 {
-    // int i = 0;
     int error;
 
     if (pthread_mutex_init(&lock, NULL) != 0)

