@@ -67,6 +67,8 @@ void *try_time()
     register int y;
     int i, j, max, k, max2, x2;
     int x = j = max = max2 = x2 = 0;
+    int cache_hit_threshold = 2;
+    int results = 0;
 
     for (int z = 0; z < 100000; z++){}
 
@@ -85,30 +87,33 @@ void *try_time()
 #ifdef INCACHE
             junk2 += check;
 #endif
-            for (volatile int z = 0; z < 1000; z++)
+            for (volatile int z = 0; z < 50; z++)
             {
                 reset_counter();
-            for (volatile int z = 0; z < 100; z++) {}
+            // for (volatile int z = 0; z < 100; z++) {}
                 // time1 = __rdtscp( & junk); /* READ TIMER */
                 //   junk = * addr; /* MEMORY ACCESS TO TIME */
                 junk2 = junk1;
                 // time2 = __rdtscp( & junk) - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
-            for (volatile int z = 0; z < 100; z++) {}
+            // for (volatile int z = 0; z < 100; z++) {}
                 y = get_counter();
             }
             reset_counter();
-            for (volatile int z = 0; z < 100; z++) {}
+            // for (volatile int z = 0; z < 100; z++) {}
             // time1 = __rdtscp( & junk); /* READ TIMER */
             junk2 = check;
             // time2 = __rdtscp( & junk); /* READ TIMER & COMPUTE ELAPSED TIME */
-            for (volatile int z = 0; z < 100; z++) {}
+            // for (volatile int z = 0; z < 100; z++) {}
             y = get_counter();
             time2 -= time1;
+            if ((int)time2 <= cache_hit_threshold){
+                results++;
+            }
             x += y;
             x2 += time2;
             // printf("pthread: %4d, __rdtscp: %4llu\n", y, time2);
         }
-        printf("Cumulative counter was measured: pthread: %4d, __rdtscp: %4d\n", x, x2);
+        // printf("Cumulative counter was measured: pthread: %4d, __rdtscp: %4d\n", x, x2);
         if (x>max)
         {
             max=x;
@@ -118,7 +123,8 @@ void *try_time()
             max2=x2;
         }
     }
-    printf("max: %d\n", max);
+    // printf("max: %d\n", max);
+    printf("results: %d\n", results);
 
     go = 0;
     return NULL;

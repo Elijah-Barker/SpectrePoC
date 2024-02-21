@@ -1,0 +1,16 @@
+┌──(kali㉿spectre)-[~/git/SpectrePoC/clock]
+└─$ gcc clock.c -o clock.out -O0 -DINCACHE
+
+┌──(kali㉿spectre)-[~/git/SpectrePoC/clock]
+└─$ ./clock.out 
+results: 1000
+
+┌──(kali㉿spectre)-[~/git/SpectrePoC/clock]
+└─$ gcc clock.c -o clock.out -O0 
+
+┌──(kali㉿spectre)-[~/git/SpectrePoC/clock]
+└─$ ./clock.out 
+results: 0
+
+┌──(kali㉿spectre)-[~/git/SpectrePoC/clock]
+└─$ 
