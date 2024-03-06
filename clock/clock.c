@@ -67,7 +67,7 @@ void *try_time()
     register int y;
     int i, j, max, k, max2, x2, junk3;
     int x = j = max = max2 = x2 = junk3 = 0;
-    int cache_hit_threshold = 20;
+    int cache_hit_threshold = 5;
     int results = 0;
     int cumu = 0;
 

